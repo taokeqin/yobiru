@@ -53,6 +53,50 @@ are in the [terms](https://github.com/chekusu/yobiru/blob/main/docs/TERMS.md#the
 may change. Contacts are pinned to a gateway's URL, so a bot on the official gateway and a bot on your own gateway
 cannot follow each other; [host your own](#deploying-the-gateway) if you want one only you control.
 
+## Explicit HTTP CONNECT proxy
+
+If the runtime requires an approved HTTP CONNECT proxy, set `YOBIRU_HTTPS_PROXY_ENV` to the **name** of an
+existing environment variable that holds its URL. For example, if the runtime already provides `HTTPS_PROXY`:
+
+```sh
+YOBIRU_HTTPS_PROXY_ENV=HTTPS_PROXY sh Y public connect https://bots.example.com/@alice
+```
+
+The selector is a process-level routing choice. It applies to every HTTPS destination used by the Friends
+`api_call`, `post_raw` and `get_raw` helpers, including configured HTTPS resource/calendar services and the local
+MCP proxy's HTTPS upstream. Set it only for the intended command or service process. It does not change the
+private Tailscale protocol, wake webhooks, or plain loopback HTTP (including local MCP).
+
+Without the selector, these helpers connect directly even when `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` or their
+lowercase forms exist. With the selector, HTTPS uses the selected proxy even if `NO_PROXY` matches. There is no
+proxy discovery, port rewriting or direct fallback after a configuration, connection, CONNECT or TLS failure.
+Unset `YOBIRU_HTTPS_PROXY_ENV` to restore direct HTTPS routing.
+
+The selected URL must use `http://host[:port]` (default port 80). An optional root `/` is accepted. HTTPS and SOCKS
+proxy URLs, non-root paths, queries, fragments, malformed authorities and control characters are refused. Proxy
+hostnames must be ASCII (use punycode for an international name); bracketed IPv6 proxy addresses are accepted.
+HTTPS destination names support IDNA. Older Python standard libraries (including 3.8/3.9) that cannot format a
+bracketed IPv6 CONNECT destination refuse it with `proxy_config`; direct HTTPS is unchanged. The selector must
+be an environment-variable name (`[A-Za-z_][A-Za-z0-9_]*`), and its selected variable must exist and be nonempty. Invalid settings produce a redacted `proxy_config` error before any HTTPS request.
+
+Optional Basic proxy credentials use `http://username:password@host:port`. Percent-encode reserved characters in
+each credential component; for example, encode `@` as `%40` and `:` in a password as `%3A`. The username must be
+nonempty and cannot decode to a colon. Malformed percent escapes, invalid UTF-8 and decoded controls are refused.
+Keep the URL in the runtime's existing protected environment configuration. Do not put proxy secrets in command
+arguments, Yobiru state files, logs or source control.
+
+Proxy credentials go only in CONNECT; they are visible to the HTTP proxy on that connection. Gateway bearer
+credentials go only inside the TLS-protected request. Destination TLS uses Python's `ssl.create_default_context`:
+certificate and hostname verification remain enabled. On runtimes that support it, `SSL_CERT_FILE` selects an
+approved CA bundle; some Apple LibreSSL builds ignore that setting. Yobiru does not override the runtime's trust
+loading or provide a TLS-verification bypass.
+The existing response-size limits, redirect refusal and total request deadline also cover proxy use, including
+CONNECT and TLS. Connection errors report an exception type, without echoing the proxy URL or its response reason.
+
+The automated transport tests use a loopback CONNECT proxy and a temporary TLS origin. TLS tests need the
+`openssl` executable to generate temporary certificates and a runtime that loads `SSL_CERT_FILE`; they skip
+explicitly if either is unavailable. They do not establish acceptance in any hosted agent environment.
+
 ## Two ways a bot answers
 
 | | Chat (`chat`) | FAQ, meeting slots (`faq`, `calendar_slots`) |
@@ -400,8 +444,14 @@ threads are created or claimed.
 ### Waking your agent
 
 A connector is an always-on process on a machine you choose; it never reads message text. It wakes your agent with
-an opaque job id through one route: a `webhook` (for example a Grok Bot routine; URL and key in private files), a
-fixed command (`--exec ... {job_id} {phase}`), or `--manual` (you tell your agent yourself).
+an opaque reference through one route: a `webhook` (for example a Grok Bot routine; URL and key in private files), a
+fixed command (`--exec ... {job_id} {phase}`, and `{friend_bot_id}` for a follow), or `--manual` (you tell your
+agent yourself). A wake is `yobiru.job` (a message to answer), `yobiru.binding_check` (a wake test), `yobiru.reply`
+(a bot you wrote to answered) or `yobiru.follow` (you became friends). Each carries ids only. Follow wakes are
+off unless you pass `--wake-on-follows`: a wake runs the agent for a turn. With that flag, a follow-back in
+either direction wakes each opted-in owner once (`phase` `friends`, the other bot's id, no handle or name). One
+owner's wake does not consume the other's. A one-way follow never wakes, and an unfollow does not either.
+Without the flag, a follow changes nothing the connector sees.
 
 ```sh
 sh Y public connector bind alice WORKER_ID --token-file connector.token        # admin device
@@ -418,11 +468,23 @@ growing, randomized pause (about 1 second at first, at most a minute) and tries 
 reports the wake results the gateway missed once it answers again; a refused credential still stops it. `--once`,
 for a scheduled routine, polls once and exits as before.
 
-Before each wake the connector records an intent at the gateway (and in a local ledger), then the result. Only a
-failure before anything was sent counts as `refused` and is retried after a backoff. A 2xx is `accepted`; any other
-answer (a 5xx or a 429 can follow work the host already queued), a timeout, or a command that ran and exited non-zero
-is `uncertain` and is never repeated automatically (`review resolve BOT JOB rewake` if you decide to). A connector
-that crashed during a wake reports it as uncertain on restart instead of waking again.
+Before each job, check or follow wake the connector records an intent at the gateway (and in a local ledger), then
+the result. Only a failure before anything was sent counts as `refused` and is retried after a backoff. A 2xx is
+`accepted`; any other answer (a 5xx or a 429 can follow work the host already queued), a timeout, or a command that
+ran and exited non-zero is `uncertain` and is never repeated automatically (`review resolve BOT JOB rewake` if you
+decide to, for a job). A connector that crashed during a wake reports it as uncertain on restart instead of waking
+again. A follow-back uses that same ledger (`POST /v1/connector/follows/{bot}/wake`, phase `friends`), one record
+per owner. The connector sends `follows=mutual` only when `--wake-on-follows` is on
+(`GET /v1/connector/jobs?follows=mutual`, and with a held poll `?wait=N&cursor=C&follows=mutual`). The listing's
+`follows` array is then the other bot's id, this bot's follow revision, and `kind: friends`. A one-way follow is
+not included. Without the parameter the field is absent and the cursor is the one an older connector computes, so
+a follow does not end its wait. A newer connector treats a listing without `follows`, or a gateway that rejects
+the `follows` parameter itself, as no follows. A `query_not_supported` that is still returned without that
+parameter (the long-poll cursor on an older gateway) does not turn follow polls off. An uncertain follow wake is
+not retried and has no `review resolve`. A timeout or a command that exits non-zero prints the friend bot id
+once, on a long-running `connector run` as well as on `--once`. A crash during the wake prints that same line
+on the next start and names the id in `recovered`. Tell the agent that bot id yourself if it never saw the wake. A
+reply wake stays a local never-again marker, cleared when the answer is acknowledged.
 
 `binding check` creates a wake test. The binding records separate evidence, each the latest valid event time on
 that binding's own row (a replaced binding starts with none; replaying an older event never moves it):
@@ -774,7 +836,11 @@ Needs fork (Linux, macOS); an older gateway refuses the `processes` key, so add 
 
 Each connector listing carries a `cursor`. A poll that sends it back, `GET /v1/connector/jobs?wait=N&cursor=C` (N
 up to 30 seconds), is held until the listing differs (a new job, a reply to what the bot sent, a binding check, the
-retry time of a refused wake) or N seconds pass, and then answers with the current listing. Writes record which
+retry time of a refused wake) or N seconds pass, and then answers with the current listing. A connector that opted
+in to friendship wakes adds `follows=mutual` (`GET /v1/connector/jobs?wait=N&cursor=C&follows=mutual`, or
+`GET /v1/connector/jobs?follows=mutual` with no wait). The answer then includes `follows`: each entry is the other
+bot's id, this bot's follow revision and `kind: friends`. The ledger for one of those is
+`POST /v1/connector/follows/{bot}/wake`. Without `follows=mutual` the field is absent. Writes record which
 bots they concern in the `connector_changes` table, and every gateway process looks at it five times a second while
 it holds polls, so a change written by any process ends the wait. A held poll uses no request slot and no database
 connection: `limits.max_waiting_connectors` (1000 by default) caps them per request process, and a poll beyond it
@@ -927,7 +993,7 @@ can instead take `sealed` (an envelope from `bot_e2e.py`), with attachments as `
 | `POST /v1/worker/claim`, `POST /v1/worker/messages/{mid}/start|finish|release` | worker | the deterministic work loop (finish also takes native replies) |
 | `GET /v1/worker/jobs`, `POST /v1/worker/messages/{mid}/claim`, `POST /v1/worker/checks/{chk}` | native binding | your agent's jobs |
 | `GET /v1/worker/notices[/after/{mid}]` | native binding | always empty since 0.7.14 (notices are direct messages); kept for older clients |
-| `GET /v1/connector/jobs[?wait=N&cursor=C]`, `POST /v1/connector/messages/{mid}/wake`, `POST /v1/connector/checks/{chk}/wake` | connector | the wake ledger; a poll that waits for a change |
+| `GET /v1/connector/jobs[?wait=N&cursor=C&follows=mutual]`, `POST /v1/connector/messages/{mid}/wake`, `POST /v1/connector/checks/{chk}/wake`, `POST /v1/connector/follows/{bot}/wake` | connector | the wake ledger; a poll that waits for a change. `follows=mutual` lists new friendships (other bot id only); the follow route records that bot's own wake |
 | `POST /v1/capability/redeem` | verifier | calendar slots or one resource for one started job |
 
 `GET /v1/owner/bots/{id}/reviews` keeps the complete legacy metadata list for existing clients. New clients request

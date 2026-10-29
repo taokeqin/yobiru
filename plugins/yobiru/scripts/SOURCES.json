@@ -4,7 +4,7 @@
   "files": {
     "scripts/tailmsg.py": {
       "source": "tailmsg.py",
-      "sha256": "d295ff8a1ad773a07e1458452eaeec5524fe0b430031101a1581e19f05dfbf5c"
+      "sha256": "fb0fd3296dd0d2457fed42191a4b62b0b233f7f7514ff37196fc39cc05a49963"
     },
     "scripts/codex_bridge/CODEX_DISPATCHER.md": {
       "source": "CODEX_DISPATCHER.md",
@@ -40,11 +40,11 @@
     },
     "scripts/claude_bridge/claude_bridge.py": {
       "source": "claude_bridge.py",
-      "sha256": "ee99d1e44db21d8ed2ead820f98e5a707d3c0bdf4dfbfd3293c8dfed8b9a5ac3"
+      "sha256": "f2be634cd01b3a17970965f26512ef6f2dce15f37674fc76711d2292234342f0"
     },
     "scripts/claude_bridge/CLAUDE_BRIDGE.md": {
       "source": "docs/CLAUDE_BRIDGE.md",
-      "sha256": "0d96cf2ce99ee49f206cd40104aac12bfbd987d755852eb418f99186e510aaf4"
+      "sha256": "5bc3bf66e7f946f18254dc888b91f45fa573434ef242604afbed666782bbc22b"
     },
     "scripts/claude_bridge/install_claude_bridge.py": {
       "source": "install_claude_bridge.py",
@@ -52,7 +52,7 @@
     },
     "docs/PUBLIC_BOTS.md": {
       "source": "docs/PUBLIC_BOTS.md",
-      "sha256": "645dd0f67ca997c5b7f000c40215cf16a93479008d480025d2c2a9f60a1f9e5f"
+      "sha256": "23d485a1ec7925b5895d2f4399f3f9f155549b98970122e4d6afc2143593e087"
     },
     "scripts/public_bots/bot_agents.py": {
       "source": "public_bots/bot_agents.py",
@@ -68,11 +68,11 @@
     },
     "scripts/public_bots/bot_client.py": {
       "source": "public_bots/bot_client.py",
-      "sha256": "d77c9f9809e6730231d1856e73f1f4f5cf758d0bcc13350feb53b8fb0347aff2"
+      "sha256": "4eb1355f81487f47891c73c5b570dedebefcb4cd72fe1622b5826d9ee44ddbd8"
     },
     "scripts/public_bots/bot_common.py": {
       "source": "public_bots/bot_common.py",
-      "sha256": "7158ab79371901c3088018c70da2690ee19a95925399dc14a68da3476fa4a460"
+      "sha256": "d267d5e8890efa9d677be865685c670bb5d29a33008fc07ac192f789af22f85a"
     },
     "scripts/public_bots/bot_e2e.py": {
       "source": "public_bots/bot_e2e.py",
@@ -80,7 +80,7 @@
     },
     "scripts/public_bots/bot_gateway.py": {
       "source": "public_bots/bot_gateway.py",
-      "sha256": "300bab40ffec07f33928684f2b3e0931ce576eb3f5f6bc76a80510aae57b72c3"
+      "sha256": "a1bb3af998a47c011f9f6a933e791fda374a65c21fea1adf28c2ae8227526f01"
     },
     "scripts/public_bots/bot_links.py": {
       "source": "public_bots/bot_links.py",
